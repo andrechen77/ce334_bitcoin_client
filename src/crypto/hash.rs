@@ -17,6 +17,12 @@ impl Hashable for H256 {
     }
 }
 
+impl Hashable for str {
+    fn hash(&self) -> H256 {
+        ring::digest::digest(&ring::digest::SHA256, self.as_bytes()).into()
+    }
+}
+
 impl std::fmt::Display for H256 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let start = if let Some(precision) = f.precision() {
