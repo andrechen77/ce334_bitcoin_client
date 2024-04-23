@@ -1,4 +1,3 @@
-
 use super::hash::{Hashable, H256};
 
 #[derive(Debug, Default, Clone)]
@@ -22,17 +21,23 @@ fn hash_children(lhs: &H256, rhs: &H256) -> H256 {
 }
 
 impl MerkleTree {
-    pub fn new<T>(data: &[T]) -> Self where T: Hashable, {
+    pub fn new<T>(data: &[T]) -> Self
+    where
+        T: Hashable,
+    {
         assert!(!data.is_empty());
 
         // turn each item into the leaf nodes
         let mut nodes: Vec<_> = data
             .iter()
-            .map(|item| Some(Box::new(MerkleTreeNode {
-                hash: item.hash(),
-                lhs: None,
-                rhs: None
-            }))).collect();
+            .map(|item| {
+                Some(Box::new(MerkleTreeNode {
+                    hash: item.hash(),
+                    lhs: None,
+                    rhs: None,
+                }))
+            })
+            .collect();
 
         // aggregate the nodes together until there is only one root
         let mut num_aggregations = 0;
@@ -56,9 +61,7 @@ impl MerkleTree {
                 };
 
                 // take either the next node or clone the left node
-                let rhs = get_node(&mut nodes, i * 2 + 1).unwrap_or_else(|| {
-                    lhs.clone()
-                });
+                let rhs = get_node(&mut nodes, i * 2 + 1).unwrap_or_else(|| lhs.clone());
 
                 // replace the left node's spot with a parent that has both
                 // lhs and rhs as children
@@ -102,7 +105,8 @@ impl MerkleTree {
         let mut result = Vec::new();
         let mut current_node = &self.root;
         for direction in directions {
-            const ERROR_MSG: &str = "can traverse through `self.num_aggregations` levels; the tree is full";
+            const ERROR_MSG: &str =
+                "can traverse through `self.num_aggregations` levels; the tree is full";
             if direction {
                 // go right
                 result.push(current_node.lhs.as_ref().expect(ERROR_MSG).hash);
@@ -119,7 +123,13 @@ impl MerkleTree {
 
 /// Verify that the datum hash with a vector of proofs will produce the Merkle root. Also need the
 /// index of datum and `leaf_size`, the total number of leaves.
-pub fn verify(root_hash: &H256, datum_hash: &H256, proof: &[H256], index: usize, _num_leaves: usize) -> bool {
+pub fn verify(
+    root_hash: &H256,
+    datum_hash: &H256,
+    proof: &[H256],
+    index: usize,
+    _num_leaves: usize,
+) -> bool {
     let mut bit_path = index;
     let mut current_hash = *datum_hash;
     for sibling_hash in proof.iter().rev() {
@@ -139,8 +149,8 @@ pub fn verify(root_hash: &H256, datum_hash: &H256, proof: &[H256], index: usize,
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::hash::H256;
     use super::*;
+    use crate::crypto::hash::H256;
 
     macro_rules! gen_merkle_tree_data {
         () => {{
@@ -189,8 +199,9 @@ mod tests {
         let input_data: Vec<H256> = gen_merkle_tree_data!();
         let merkle_tree = MerkleTree::new(&input_data);
         let proof = merkle_tree.proof(0);
-        assert_eq!(proof,
-                   vec![hex!("965b093a75a75895a351786dd7a188515173f6928a8af8c9baa4dcff268a4f0f").into()]
+        assert_eq!(
+            proof,
+            vec![hex!("965b093a75a75895a351786dd7a188515173f6928a8af8c9baa4dcff268a4f0f").into()]
         );
         // "965b093a75a75895a351786dd7a188515173f6928a8af8c9baa4dcff268a4f0f" is the hash of
         // "0101010101010101010101010101010101010101010101010101010101010202"
@@ -221,7 +232,13 @@ mod tests {
         let input_data: Vec<H256> = gen_merkle_tree_data!();
         let merkle_tree = MerkleTree::new(&input_data);
         let proof = merkle_tree.proof(0);
-        assert!(verify(&merkle_tree.root(), &input_data[0].hash(), &proof, 0, input_data.len()));
+        assert!(verify(
+            &merkle_tree.root(),
+            &input_data[0].hash(),
+            &proof,
+            0,
+            input_data.len()
+        ));
     }
 
     #[cfg(feature = "my-tests")]

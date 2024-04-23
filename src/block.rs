@@ -1,5 +1,8 @@
-use serde::{Serialize, Deserialize};
-use crate::{crypto::hash::{Hashable, H256}, transaction::Transaction};
+use crate::{
+    crypto::hash::{Hashable, H256},
+    transaction::Transaction,
+};
+use serde::{Deserialize, Serialize};
 
 /// the block header
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -62,7 +65,10 @@ impl Hashable for Block {
 #[cfg(any(test, test_utilities))]
 pub mod test {
     use super::*;
-    use crate::{crypto::{hash::H256, merkle::MerkleTree}, transaction::generate_random_transaction};
+    use crate::{
+        crypto::{hash::H256, merkle::MerkleTree},
+        transaction::generate_random_transaction,
+    };
 
     pub fn generate_random_block(parent: &H256) -> Block {
         let transactions: Vec<Transaction> = vec![generate_random_transaction()];
@@ -75,9 +81,7 @@ pub mod test {
                 timestamp: rand::random(),
                 merkle_root: root,
             },
-            content: Content {
-                transactions
-            },
+            content: Content { transactions },
         }
     }
 }

@@ -31,9 +31,7 @@ pub struct Handle {
     control_chan: Sender<ControlSignal>,
 }
 
-pub fn new(
-    server: &ServerHandle,
-) -> (Context, Handle) {
+pub fn new(server: &ServerHandle) -> (Context, Handle) {
     let (signal_chan_sender, signal_chan_receiver) = unbounded();
 
     let ctx = Context {
@@ -59,7 +57,6 @@ impl Handle {
             .send(ControlSignal::Start(lambda))
             .unwrap();
     }
-
 }
 
 impl Context {

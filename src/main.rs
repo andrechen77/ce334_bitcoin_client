@@ -10,10 +10,10 @@ pub mod miner;
 pub mod network;
 pub mod transaction;
 
+use api::Server as ApiServer;
 use clap::clap_app;
 use crossbeam::channel;
 use log::{error, info};
-use api::Server as ApiServer;
 use network::{server, worker};
 use std::net;
 use std::process;
@@ -73,17 +73,11 @@ fn main() {
             error!("Error parsing P2P workers: {}", e);
             process::exit(1);
         });
-    let worker_ctx = worker::new(
-        p2p_workers,
-        msg_rx,
-        &server,
-    );
+    let worker_ctx = worker::new(p2p_workers, msg_rx, &server);
     worker_ctx.start();
 
     // start the miner
-    let (miner_ctx, miner) = miner::new(
-        &server,
-    );
+    let (miner_ctx, miner) = miner::new(&server);
     miner_ctx.start();
 
     // connect to known peers
@@ -119,13 +113,8 @@ fn main() {
         });
     }
 
-
     // start the API server
-    ApiServer::start(
-        api_addr,
-        &miner,
-        &server,
-    );
+    ApiServer::start(api_addr, &miner, &server);
 
     loop {
         std::thread::park();

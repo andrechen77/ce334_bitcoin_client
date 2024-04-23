@@ -1,7 +1,7 @@
-use serde::Serialize;
 use crate::miner::Handle as MinerHandle;
-use crate::network::server::Handle as NetworkServerHandle;
 use crate::network::message::Message;
+use crate::network::server::Handle as NetworkServerHandle;
+use serde::Serialize;
 
 use log::info;
 use std::collections::HashMap;
@@ -37,11 +37,7 @@ macro_rules! respond_result {
 }
 
 impl Server {
-    pub fn start(
-        addr: std::net::SocketAddr,
-        miner: &MinerHandle,
-        network: &NetworkServerHandle,
-    ) {
+    pub fn start(addr: std::net::SocketAddr, miner: &MinerHandle, network: &NetworkServerHandle) {
         let handle = HTTPServer::http(&addr).unwrap();
         let server = Self {
             handle,

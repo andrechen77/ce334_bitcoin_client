@@ -1,12 +1,12 @@
-use serde::{Serialize, Deserialize};
-use ring::signature::{Ed25519KeyPair, Signature, ED25519, KeyPair, UnparsedPublicKey};
 use crate::crypto::hash::{Hashable, H256};
+use rand::{distributions::Alphanumeric, prelude::*};
+use ring::signature::{Ed25519KeyPair, KeyPair, Signature, UnparsedPublicKey, ED25519};
+use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
-use rand::{prelude::*, distributions::Alphanumeric};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RawTransaction {
-    pub author: String, // the name of the person who said something
+    pub author: String,    // the name of the person who said something
     pub statement: String, // the statement that they said
 }
 
@@ -26,7 +26,9 @@ pub fn verify(
     let public_key = UnparsedPublicKey::new(&ED25519, public_key_bytes);
     let signature_bytes: &[u8] = signature.as_ref();
     let transaction_bytes = bincode::serialize(transaction).expect("shouldn't fail");
-    public_key.verify(&transaction_bytes, signature_bytes).is_ok()
+    public_key
+        .verify(&transaction_bytes, signature_bytes)
+        .is_ok()
 }
 
 impl Hashable for RawTransaction {

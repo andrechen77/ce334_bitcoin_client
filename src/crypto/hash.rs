@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 
 /// An object that can be meaningfully hashed.
@@ -125,5 +125,4 @@ pub mod tests {
         raw_bytes.copy_from_slice(&random_bytes);
         (&raw_bytes).into()
     }
-
 }
