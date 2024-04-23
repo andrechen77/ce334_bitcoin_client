@@ -1,10 +1,13 @@
-use serde::{Serialize,Deserialize};
+use serde::{Serialize, Deserialize};
 use ring::signature::{Ed25519KeyPair, Signature, ED25519, KeyPair, UnparsedPublicKey};
+use crate::crypto::hash::{Hashable, H256};
+use std::iter::FromIterator;
+use rand::{prelude::*, distributions::Alphanumeric};
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RawTransaction {
-    author: String, // the name of the person who said something
-    statement: String, // the statement that they said
+    pub author: String, // the name of the person who said something
+    pub statement: String, // the statement that they said
 }
 
 /// Create digital signature of a transaction
@@ -26,25 +29,31 @@ pub fn verify(
     public_key.verify(&transaction_bytes, signature_bytes).is_ok()
 }
 
+impl Hashable for RawTransaction {
+    fn hash(&self) -> H256 {
+        let bytes = bincode::serialize(&self).expect("shouldn't fail");
+        ring::digest::digest(&ring::digest::SHA256, &bytes).into()
+    }
+}
+
 pub struct SignedTransaction {
-    transaction: RawTransaction,
-    signature: Signature,
+    pub transaction: RawTransaction,
+    pub signature: Signature,
+}
+
+pub type Transaction = RawTransaction;
+
+pub fn generate_random_transaction() -> RawTransaction {
+    let mut rng = SmallRng::from_entropy();
+    let author = String::from_iter(rng.sample_iter(&Alphanumeric).take(8));
+    let statement = String::from_iter(rng.sample_iter(&Alphanumeric).take(32));
+    RawTransaction { author, statement }
 }
 
 #[cfg(any(test, test_utilities))]
 mod tests {
     use super::*;
     use crate::crypto::key_pair;
-    use std::iter::FromIterator;
-    use rand::prelude::*;
-    use rand::distributions::Alphanumeric;
-
-    pub fn generate_random_transaction() -> RawTransaction {
-        let mut rng = SmallRng::from_entropy();
-        let author = String::from_iter(rng.sample_iter(&Alphanumeric).take(8));
-        let statement = String::from_iter(rng.sample_iter(&Alphanumeric).take(32));
-        RawTransaction { author, statement }
-    }
 
     #[test]
     fn sign_verify() {
