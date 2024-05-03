@@ -28,9 +28,7 @@ pub struct Block {
 // Returns the default difficulty, which is a big-endian 32-byte integer.
 // For a valid block, block.hash() <= difficulty
 fn default_difficulty() -> H256 {
-    let mut difficulty = [0; 32];
-    difficulty[2] = 1 << 3;
-    difficulty.into()
+    H256::with_leading_zeros(3)
 }
 
 impl Block {

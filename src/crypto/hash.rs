@@ -23,6 +23,21 @@ impl Hashable for str {
     }
 }
 
+impl H256 {
+    pub fn with_leading_zeros(num_zeroes: u8) -> Self {
+        let mut remaining_zeroes = num_zeroes;
+        let mut hash = [0xff; 32];
+        let mut current_byte_index = 0;
+        while remaining_zeroes >= 8 {
+            hash[current_byte_index] = 0;
+            remaining_zeroes -= 8;
+            current_byte_index += 1;
+        }
+        hash[current_byte_index] >>= remaining_zeroes;
+        hash.into()
+    }
+}
+
 impl std::fmt::Display for H256 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let start = if let Some(precision) = f.precision() {
