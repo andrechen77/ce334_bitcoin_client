@@ -11,12 +11,14 @@ pub mod network;
 pub mod transaction;
 
 use api::Server as ApiServer;
+use blockchain::Blockchain;
 use clap::clap_app;
 use crossbeam::channel;
 use log::{error, info};
 use network::{server, worker};
 use std::net;
 use std::process;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 
@@ -76,8 +78,11 @@ fn main() {
     let worker_ctx = worker::new(p2p_workers, msg_rx, &server);
     worker_ctx.start();
 
+    // create blockchain
+    let blockchain = Arc::new(Mutex::new(Blockchain::new()));
+
     // start the miner
-    let (miner_ctx, miner) = miner::new(&server);
+    let (miner_ctx, miner) = miner::new(&server, Arc::clone(&blockchain));
     miner_ctx.start();
 
     // connect to known peers

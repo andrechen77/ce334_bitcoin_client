@@ -1,11 +1,18 @@
+use crate::block::{Block, Content, Header};
+use crate::blockchain::Blockchain;
+use crate::crypto::hash::Hashable;
+use crate::crypto::merkle::MerkleTree;
 use crate::network::server::Handle as ServerHandle;
+use crate::transaction;
 
-use log::info;
+use log::{debug, info};
 
 use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
-use std::time;
+use std::iter::FromIterator;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
-use std::thread;
+use std::{iter, thread};
 
 enum ControlSignal {
     Start(u64), // the number controls the lambda of interval between block generation
@@ -23,6 +30,7 @@ pub struct Context {
     control_chan: Receiver<ControlSignal>,
     operating_state: OperatingState,
     server: ServerHandle,
+    blockchain: Arc<Mutex<Blockchain>>,
 }
 
 #[derive(Clone)]
@@ -31,13 +39,14 @@ pub struct Handle {
     control_chan: Sender<ControlSignal>,
 }
 
-pub fn new(server: &ServerHandle) -> (Context, Handle) {
+pub fn new(server: &ServerHandle, blockchain: Arc<Mutex<Blockchain>>) -> (Context, Handle) {
     let (signal_chan_sender, signal_chan_receiver) = unbounded();
 
     let ctx = Context {
         control_chan: signal_chan_receiver,
         operating_state: OperatingState::Paused,
         server: server.clone(),
+        blockchain,
     };
 
     let handle = Handle {
@@ -84,6 +93,9 @@ impl Context {
     }
 
     fn miner_loop(&mut self) {
+        // create a block
+        let mut block = self.create_next_block(rand::random());
+
         // main mining loop
         loop {
             // check and react to control signals
@@ -108,14 +120,57 @@ impl Context {
                 return;
             }
 
-            // TODO: actual mining
+            // do one iteration of mining
+            if block.hash() <= block.header.difficulty {
+                // add the block to the chain
+                let mut blockchain = self.blockchain.lock().expect("idk why this should succeed");
+                blockchain.insert(block);
+                drop(blockchain);
+                info!("Mined a block! Added to blockchain");
+                block = self.create_next_block(rand::random());
+            } else {
+                debug!("Didn't work, trying another nonce");
+                // increment the nonce for the next iteration
+                block.header.nonce += 1;
+                // should never wrap back around to the starting nonce
+            }
 
             if let OperatingState::Run(i) = self.operating_state {
                 if i != 0 {
-                    let interval = time::Duration::from_micros(i as u64);
+                    let interval = Duration::from_micros(i as u64);
                     thread::sleep(interval);
                 }
             }
+        }
+    }
+
+    fn create_next_block(&self, starting_nonce: u32) -> Block {
+        debug!("Creating the next block");
+        let blockchain = self.blockchain.lock().expect("idk why this should be safe");
+        let parent_hash = blockchain.tip();
+        let (parent_block, _) = blockchain
+            .look_up_block(&parent_hash)
+            .expect("parent of tip should exist");
+        let difficulty = parent_block.header.difficulty;
+        drop(blockchain);
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("system time should always be after Unix epoch")
+            .as_millis();
+        let transactions = Vec::from_iter(
+            iter::repeat_with(|| transaction::generate_random_transaction()).take(10),
+        );
+        let merkle_tree = MerkleTree::new(&transactions);
+        let merkle_root = merkle_tree.root();
+        Block {
+            header: Header {
+                parent: parent_hash,
+                nonce: starting_nonce,
+                difficulty,
+                timestamp,
+                merkle_root,
+            },
+            content: Content { transactions },
         }
     }
 }

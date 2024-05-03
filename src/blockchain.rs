@@ -19,15 +19,14 @@ impl Blockchain {
     }
 
     /// Insert a block into blockchain
-    pub fn insert(&mut self, block: &Block) {
+    pub fn insert(&mut self, block: Block) {
         let hash = block.hash();
         let &(_, parent_height) = self
             .hash_to_block
             .get(&block.header.parent)
             .expect("no orphan blocks");
         let block_height = parent_height + 1;
-        self.hash_to_block
-            .insert(hash, (block.clone(), block_height));
+        self.hash_to_block.insert(hash, (block, block_height));
 
         // if the block's height is the new tallest, it becomes the new tip
         let &(_, current_tallest_height) = self
@@ -42,6 +41,11 @@ impl Blockchain {
     /// Get the last block's hash of the longest chain
     pub fn tip(&self) -> H256 {
         self.tip
+    }
+
+    /// Look up a block and its height using the specified hash
+    pub fn look_up_block(&self, hash: &H256) -> Option<&(Block, u64)> {
+        self.hash_to_block.get(hash)
     }
 
     /// Get all the blocks' hashes along the longest chain
@@ -77,7 +81,7 @@ mod tests {
         let mut blockchain = Blockchain::new();
         let genesis_hash = blockchain.tip();
         let block = generate_random_block(&genesis_hash);
-        blockchain.insert(&block);
+        blockchain.insert(block.clone());
         assert_eq!(blockchain.tip(), block.hash());
     }
 
@@ -86,12 +90,12 @@ mod tests {
         let mut blockchain = Blockchain::new();
         let genesis_hash = blockchain.tip();
         let mut block = generate_random_block(&genesis_hash);
-        blockchain.insert(&block);
+        blockchain.insert(block.clone());
         assert_eq!(blockchain.tip(), block.hash());
         for _ in 0..50 {
             let h = block.hash();
             block = generate_random_block(&h);
-            blockchain.insert(&block);
+            blockchain.insert(block.clone());
             assert_eq!(blockchain.tip(), block.hash());
         }
     }
@@ -101,25 +105,25 @@ mod tests {
         let mut blockchain = Blockchain::new();
         let genesis_hash = blockchain.tip();
         let block_1 = generate_random_block(&genesis_hash);
-        blockchain.insert(&block_1);
+        blockchain.insert(block_1.clone());
         assert_eq!(blockchain.tip(), block_1.hash());
         let block_2 = generate_random_block(&block_1.hash());
-        blockchain.insert(&block_2);
+        blockchain.insert(block_2.clone());
         assert_eq!(blockchain.tip(), block_2.hash());
         let block_3 = generate_random_block(&block_2.hash());
-        blockchain.insert(&block_3);
+        blockchain.insert(block_3.clone());
         assert_eq!(blockchain.tip(), block_3.hash());
         let fork_block_1 = generate_random_block(&block_2.hash());
-        blockchain.insert(&fork_block_1);
+        blockchain.insert(fork_block_1.clone());
         assert_eq!(blockchain.tip(), block_3.hash());
         let fork_block_2 = generate_random_block(&fork_block_1.hash());
-        blockchain.insert(&fork_block_2);
+        blockchain.insert(fork_block_2.clone());
         assert_eq!(blockchain.tip(), fork_block_2.hash());
         let block_4 = generate_random_block(&block_3.hash());
-        blockchain.insert(&block_4);
+        blockchain.insert(block_4.clone());
         assert_eq!(blockchain.tip(), fork_block_2.hash());
         let block_5 = generate_random_block(&block_4.hash());
-        blockchain.insert(&block_5);
+        blockchain.insert(block_5.clone());
         assert_eq!(blockchain.tip(), block_5.hash());
     }
 
@@ -132,15 +136,15 @@ mod tests {
             let mut blockchain = Blockchain::new();
             let genesis_hash = blockchain.tip();
             let block_1 = generate_random_block(&genesis_hash);
-            blockchain.insert(&block_1);
+            blockchain.insert(block_1.clone());
             let block_2 = generate_random_block(&block_1.hash());
-            blockchain.insert(&block_2);
+            blockchain.insert(block_2.clone());
             let block_3 = generate_random_block(&block_2.hash());
-            blockchain.insert(&block_3);
+            blockchain.insert(block_3.clone());
             let block_4 = generate_random_block(&block_3.hash());
-            blockchain.insert(&block_4);
+            blockchain.insert(block_4.clone());
             let block_5 = generate_random_block(&block_4.hash());
-            blockchain.insert(&block_5);
+            blockchain.insert(block_5.clone());
             let blocks_in_longest_chain = blockchain.all_blocks_in_longest_chain();
             assert_eq!(
                 blocks_in_longest_chain,
