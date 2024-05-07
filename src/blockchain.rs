@@ -5,6 +5,7 @@ use std::collections::HashMap;
 pub struct Blockchain {
     hash_to_block: HashMap<H256, (Block, u64)>,
     tip: H256,
+    orphanage: HashMap<H256, Vec<Block>>,
 }
 
 impl Blockchain {
@@ -15,6 +16,7 @@ impl Blockchain {
         Blockchain {
             hash_to_block: HashMap::from([(genesis_hash, (genesis, 0))]),
             tip: genesis_hash,
+            orphanage: HashMap::new(),
         }
     }
 
@@ -35,6 +37,39 @@ impl Blockchain {
             .expect("tip exists in the blockchain");
         if block_height > current_tallest_height {
             self.tip = hash;
+        }
+    }
+
+    /// Insert a block into the blockchain with validation.
+    pub fn insert_with_validation(&mut self, block: Block) {
+        // find the the parent
+        let hash = block.hash();
+        let parent_hash = &block.header.parent;
+        if let Some((parent_block, _parent_height)) = self.hash_to_block.get(parent_hash) {
+            // calculate the difficulty
+            let required_difficulty = parent_block.header.difficulty;
+
+            // check if the block is valid
+            if hash > required_difficulty {
+                // reject the block
+                return;
+            }
+
+            // assume that if the blocks are valid, then we care about them even
+            // if they're unsolicited.
+
+            // add the blocks to the blockchain
+            self.insert(block);
+
+            // insert all blocks for which this block is a parent
+            if let Some(orphan_children) = self.orphanage.remove(&hash) {
+                for orphan in orphan_children {
+                    self.insert_with_validation(orphan);
+                }
+            }
+        } else {
+            // put it into the orphanage
+            self.orphanage.entry(*parent_hash).or_default().push(block);
         }
     }
 

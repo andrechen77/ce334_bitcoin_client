@@ -59,6 +59,9 @@ fn main() {
             process::exit(1);
         });
 
+    // create blockchain
+    let blockchain = Arc::new(Mutex::new(Blockchain::new()));
+
     // create channels between server and worker
     let (msg_tx, msg_rx) = channel::unbounded();
 
@@ -75,11 +78,8 @@ fn main() {
             error!("Error parsing P2P workers: {}", e);
             process::exit(1);
         });
-    let worker_ctx = worker::new(p2p_workers, msg_rx, &server);
+    let worker_ctx = worker::new(p2p_workers, msg_rx, &server, Arc::clone(&blockchain));
     worker_ctx.start();
-
-    // create blockchain
-    let blockchain = Arc::new(Mutex::new(Blockchain::new()));
 
     // start the miner
     let (miner_ctx, miner) = miner::new(&server, Arc::clone(&blockchain));

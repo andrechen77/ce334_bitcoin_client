@@ -2,6 +2,7 @@ use crate::block::{Block, Content, Header};
 use crate::blockchain::Blockchain;
 use crate::crypto::hash::Hashable;
 use crate::crypto::merkle::MerkleTree;
+use crate::network::message::Message;
 use crate::network::server::Handle as ServerHandle;
 use crate::transaction;
 
@@ -121,12 +122,14 @@ impl Context {
             }
 
             // do one iteration of mining
-            if block.hash() <= block.header.difficulty {
+            let hash = block.hash();
+            if hash <= block.header.difficulty {
                 // add the block to the chain
                 let mut blockchain = self.blockchain.lock().expect("idk why this should succeed");
                 blockchain.insert(block);
                 drop(blockchain);
                 info!("Mined a block! Added to blockchain");
+                self.server.broadcast(Message::NewBlockHashes(vec![hash]));
                 block = self.create_next_block(rand::random());
             } else {
                 debug!("Didn't work, trying another nonce");
