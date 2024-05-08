@@ -40,8 +40,16 @@ impl Blockchain {
         }
     }
 
-    /// Insert a block into the blockchain with validation.
-    pub fn insert_with_validation(&mut self, block: Block) {
+    /// Insert a block into the blockchain with validation. Returns an iterator
+    /// over all blocks that were added.
+    pub fn insert_with_validation(&mut self, block: Block) -> Vec<H256> {
+        let mut added_blocks = vec![];
+
+        // check if the block is already in the blockchain
+        if self.hash_to_block.contains_key(&block.hash()) {
+            return added_blocks;
+        }
+
         // find the the parent
         let hash = block.hash();
         let parent_hash = &block.header.parent;
@@ -52,7 +60,7 @@ impl Blockchain {
             // check if the block is valid
             if hash > required_difficulty {
                 // reject the block
-                return;
+                return added_blocks;
             }
 
             // assume that if the blocks are valid, then we care about them even
@@ -60,17 +68,20 @@ impl Blockchain {
 
             // add the blocks to the blockchain
             self.insert(block);
+            added_blocks.push(hash);
 
             // insert all blocks for which this block is a parent
             if let Some(orphan_children) = self.orphanage.remove(&hash) {
                 for orphan in orphan_children {
-                    self.insert_with_validation(orphan);
+                    let mut added_children = self.insert_with_validation(orphan);
+                    added_blocks.append(&mut added_children);
                 }
             }
         } else {
             // put it into the orphanage
             self.orphanage.entry(*parent_hash).or_default().push(block);
         }
+        added_blocks
     }
 
     /// Get the last block's hash of the longest chain

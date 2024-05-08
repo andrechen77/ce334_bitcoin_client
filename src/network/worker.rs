@@ -70,7 +70,9 @@ impl Context {
                         .filter(|new_hash| blockchain.look_up_block(new_hash).is_none())
                         .collect();
                     drop(blockchain);
-                    peer.write(Message::GetBlocks(unknown_hashes));
+                    if !unknown_hashes.is_empty() {
+                        peer.write(Message::GetBlocks(unknown_hashes));
+                    }
                 }
                 Message::GetBlocks(requested_block_hashes) => {
                     debug!("GetBlocks: {:?}", requested_block_hashes);
@@ -81,14 +83,21 @@ impl Context {
                         .map(|(block, _height)| block.clone())
                         .collect();
                     drop(blockchain);
-                    peer.write(Message::Blocks(requested_blocks));
+                    if !requested_blocks.is_empty() {
+                        peer.write(Message::Blocks(requested_blocks));
+                    }
                 }
                 Message::Blocks(blocks) => {
                     debug!("Blocks: {:?}", blocks.iter().map(Block::hash).collect::<Vec<_>>());
                     let mut blockchain =
                         self.blockchain.lock().expect("idk why this should succeed");
+                    let mut all_added_blocks = vec![];
                     for block in blocks {
-                        blockchain.insert_with_validation(block);
+                        let mut added_blocks = blockchain.insert_with_validation(block);
+                        all_added_blocks.append(&mut added_blocks);
+                    }
+                    if !all_added_blocks.is_empty() {
+                        self.server.broadcast(Message::NewBlockHashes(all_added_blocks));
                     }
                 }
             }
