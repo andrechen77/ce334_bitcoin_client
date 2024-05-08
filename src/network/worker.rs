@@ -11,7 +11,7 @@ use log::{debug, warn};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
-    thread,
+    thread, time::SystemTime,
 };
 
 #[derive(Clone)]
@@ -89,10 +89,15 @@ impl Context {
                 }
                 Message::Blocks(blocks) => {
                     debug!("Blocks: {:?}", blocks.iter().map(Block::hash).collect::<Vec<_>>());
+                    let now: u128 = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("system time should always be after Unix epoch")
+                        .as_millis();
                     let mut blockchain =
                         self.blockchain.lock().expect("idk why this should succeed");
                     let mut all_added_blocks = vec![];
                     for block in blocks {
+                        let latency = now - block.header.timestamp;
                         let mut added_blocks = blockchain.insert_with_validation(block);
                         all_added_blocks.append(&mut added_blocks);
                     }

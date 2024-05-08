@@ -122,6 +122,10 @@ impl Context {
             }
 
             // do one iteration of mining
+            block.header.timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time should always be after Unix epoch")
+                .as_millis();
             let hash = block.hash();
             if hash <= block.header.difficulty {
                 // add the block to the chain
