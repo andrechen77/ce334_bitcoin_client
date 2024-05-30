@@ -1,6 +1,6 @@
 use crate::{
     crypto::hash::{Hashable, H256},
-    transaction::Transaction,
+    transaction::SignedTransaction as Transaction,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub struct Header {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Content {
-    pub transactions: Vec<Transaction>, // TODO consider using SignedTransaction
+    pub transactions: Vec<Transaction>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -67,11 +67,10 @@ pub mod test {
     use super::*;
     use crate::{
         crypto::{hash::H256, merkle::MerkleTree},
-        transaction::generate_random_transaction,
     };
 
     pub fn generate_random_block(parent: &H256) -> Block {
-        let transactions: Vec<Transaction> = vec![generate_random_transaction()];
+        let transactions: Vec<Transaction> = vec![Transaction::generate_random()];
         let root = MerkleTree::new(&transactions).root();
         Block {
             header: Header {

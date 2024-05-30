@@ -165,7 +165,7 @@ impl Context {
             .expect("system time should always be after Unix epoch")
             .as_millis();
         let transactions = Vec::from_iter(
-            iter::repeat_with(|| transaction::generate_random_transaction()).take(10),
+            iter::repeat_with(|| transaction::SignedTransaction::generate_random()).take(10),
         );
         let merkle_tree = MerkleTree::new(&transactions);
         let merkle_root = merkle_tree.root();

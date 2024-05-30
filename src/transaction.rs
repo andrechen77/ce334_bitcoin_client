@@ -1,13 +1,15 @@
-use crate::crypto::hash::{Hashable, H256};
-use rand::{distributions::Alphanumeric, prelude::*};
+use crate::crypto::{hash::{Hashable, H256}, address::H160, key_pair};
+use rand::{distributions::Standard, prelude::*};
 use ring::signature::{Ed25519KeyPair, KeyPair, Signature, UnparsedPublicKey, ED25519};
 use serde::{Deserialize, Serialize};
-use std::iter::FromIterator;
+use std::convert::TryInto;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RawTransaction {
-    pub author: String,    // the name of the person who said something
-    pub statement: String, // the statement that they said
+    pub from_addr: H160,
+    pub to_addr: H160,
+    pub value: u64,
+    pub nonce: u32,
 }
 
 /// Create digital signature of a transaction
@@ -31,6 +33,22 @@ pub fn verify(
         .is_ok()
 }
 
+impl RawTransaction {
+    pub fn generate_random() -> Self {
+        let mut rng = SmallRng::from_entropy();
+        let from_addr: [u8; 20] = rng.sample_iter(&Standard).take(20).collect::<Vec<u8>>().try_into().unwrap();
+        let to_addr: [u8; 20] = rng.sample_iter(&Standard).take(20).collect::<Vec<u8>>().try_into().unwrap();
+        let value = rng.gen();
+        let nonce = rng.gen();
+        RawTransaction {
+            from_addr: from_addr.into(),
+            to_addr: to_addr.into(),
+            value,
+            nonce,
+        }
+    }
+}
+
 impl Hashable for RawTransaction {
     fn hash(&self) -> H256 {
         let bytes = bincode::serialize(&self).expect("shouldn't fail");
@@ -38,18 +56,43 @@ impl Hashable for RawTransaction {
     }
 }
 
+/// A signed transaction
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SignedTransaction {
-    pub transaction: RawTransaction,
-    pub signature: Signature,
+    pub raw_transaction: RawTransaction,
+    pub pub_key: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
-pub type Transaction = RawTransaction;
+impl SignedTransaction {
+    /// Create a new transaction from a raw transaction and a key pair
+    pub fn from_raw(raw_transaction: RawTransaction, key: &Ed25519KeyPair) -> SignedTransaction {
+        let pub_key = key.public_key().as_ref().to_vec();
+        let signature = sign(&raw_transaction, key).as_ref().to_vec();
+        SignedTransaction { raw_transaction, pub_key, signature }
+    }
 
-pub fn generate_random_transaction() -> RawTransaction {
-    let mut rng = SmallRng::from_entropy();
-    let author = String::from_iter(rng.sample_iter(&Alphanumeric).take(8));
-    let statement = String::from_iter(rng.sample_iter(&Alphanumeric).take(32));
-    RawTransaction { author, statement }
+    pub fn generate_random() -> Self {
+        let raw_transaction = RawTransaction::generate_random();
+        let key = key_pair::random();
+        SignedTransaction::from_raw(raw_transaction, &key)
+    }
+
+    /// Verify the signature of this transaction
+    pub fn verify_signature(&self) -> bool {
+        let serialized_raw = bincode::serialize(&self.raw_transaction).unwrap();
+        let public_key = ring::signature::UnparsedPublicKey::new(
+            &ring::signature::ED25519, &self.pub_key[..]
+        );
+        public_key.verify(&serialized_raw, self.signature.as_ref()).is_ok()
+    }
+}
+
+impl Hashable for SignedTransaction {
+    fn hash(&self) -> H256 {
+        let bytes = bincode::serialize(&self).expect("shouldn't fail");
+        ring::digest::digest(&ring::digest::SHA256, &bytes).into()
+    }
 }
 
 #[cfg(any(test, test_utilities))]
@@ -59,7 +102,7 @@ mod tests {
 
     #[test]
     fn sign_verify() {
-        let t = generate_random_transaction();
+        let t = RawTransaction::generate_random();
         let key = key_pair::random();
         let signature = sign(&t, &key);
         assert!(verify(&t, &(key.public_key()), &signature));
@@ -72,7 +115,7 @@ mod tests {
         #[test]
         fn sign_verify() {
             for _ in 0..100 {
-                let t = generate_random_transaction();
+                let t = RawTransaction::generate_random();
                 let key = key_pair::random();
                 let signature = sign(&t, &key);
                 assert!(verify(&t, &(key.public_key()), &signature));
