@@ -24,6 +24,6 @@ clap = { version = "2.33", features = ["wrap_help"]}
 net2 = "^0.2.36"
 
 [features]
-default = []
+default = ["my-tests"]
 test-utilities = []
 my-tests = []

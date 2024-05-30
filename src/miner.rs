@@ -2,6 +2,7 @@ use crate::block::{Block, Content, Header};
 use crate::blockchain::Blockchain;
 use crate::crypto::hash::Hashable;
 use crate::crypto::merkle::MerkleTree;
+use crate::mempool::Mempool;
 use crate::network::message::Message;
 use crate::network::server::Handle as ServerHandle;
 use crate::transaction;
@@ -32,6 +33,7 @@ pub struct Context {
     operating_state: OperatingState,
     server: ServerHandle,
     blockchain: Arc<Mutex<Blockchain>>,
+    mempool: Arc<Mutex<Mempool>>,
 }
 
 #[derive(Clone)]
@@ -40,7 +42,7 @@ pub struct Handle {
     control_chan: Sender<ControlSignal>,
 }
 
-pub fn new(server: &ServerHandle, blockchain: Arc<Mutex<Blockchain>>) -> (Context, Handle) {
+pub fn new(server: &ServerHandle, blockchain: Arc<Mutex<Blockchain>>, mempool: Arc<Mutex<Mempool>>) -> (Context, Handle) {
     let (signal_chan_sender, signal_chan_receiver) = unbounded();
 
     let ctx = Context {
@@ -48,6 +50,7 @@ pub fn new(server: &ServerHandle, blockchain: Arc<Mutex<Blockchain>>) -> (Contex
         operating_state: OperatingState::Paused,
         server: server.clone(),
         blockchain,
+        mempool,
     };
 
     let handle = Handle {
@@ -155,7 +158,7 @@ impl Context {
         debug!("Creating the next block");
         let blockchain = self.blockchain.lock().expect("idk why this should be safe");
         let parent_hash = blockchain.tip();
-        let (parent_block, _) = blockchain
+        let (parent_block, _, _) = blockchain
             .look_up_block(&parent_hash)
             .expect("parent of tip should exist");
         let difficulty = parent_block.header.difficulty;

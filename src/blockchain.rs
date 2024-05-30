@@ -1,9 +1,11 @@
 use crate::block::Block;
 use crate::crypto::hash::{Hashable, H256};
+use crate::state::State;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct Blockchain {
-    hash_to_block: HashMap<H256, (Block, u64)>,
+    hash_to_block: HashMap<H256, (Block, u64, Arc<State>)>,
     tip: H256,
     orphanage: HashMap<H256, Vec<Block>>,
 }
@@ -13,8 +15,9 @@ impl Blockchain {
     pub fn new() -> Self {
         let genesis = Block::genesis();
         let genesis_hash = genesis.hash();
+        let initial_state = Arc::new(State::ico());
         Blockchain {
-            hash_to_block: HashMap::from([(genesis_hash, (genesis, 0))]),
+            hash_to_block: HashMap::from([(genesis_hash, (genesis, 0, initial_state))]),
             tip: genesis_hash,
             orphanage: HashMap::new(),
         }
@@ -23,15 +26,20 @@ impl Blockchain {
     /// Insert a block into blockchain
     pub fn insert(&mut self, block: Block) {
         let hash = block.hash();
-        let &(_, parent_height) = self
+        let (_, parent_height, parent_state) = self
             .hash_to_block
             .get(&block.header.parent)
             .expect("no orphan blocks");
-        let block_height = parent_height + 1;
-        self.hash_to_block.insert(hash, (block, block_height));
+        let block_height = *parent_height + 1;
+        let new_state = Arc::new(
+            parent_state
+                .update_with_transactions(block.content.transactions.iter().map(|signed| &signed.raw_transaction))
+                .expect("should be a valid block")
+        );
+        self.hash_to_block.insert(hash, (block, block_height, new_state));
 
         // if the block's height is the new tallest, it becomes the new tip
-        let &(_, current_tallest_height) = self
+        let &(_, current_tallest_height, _) = self
             .hash_to_block
             .get(&self.tip)
             .expect("tip exists in the blockchain");
@@ -40,8 +48,8 @@ impl Blockchain {
         }
     }
 
-    /// Insert a block into the blockchain with validation. Returns an iterator
-    /// over all blocks that were added.
+    /// Insert a block into the blockchain with validation. Returns all blocks
+    /// that were added
     pub fn insert_with_validation(&mut self, block: Block) -> Vec<H256> {
         let mut added_blocks = vec![];
 
@@ -53,21 +61,38 @@ impl Blockchain {
         // find the the parent
         let hash = block.hash();
         let parent_hash = &block.header.parent;
-        if let Some((parent_block, _parent_height)) = self.hash_to_block.get(parent_hash) {
+        if let Some((parent_block, parent_height, parent_state)) = self.hash_to_block.get(parent_hash) {
             // calculate the difficulty
             let required_difficulty = parent_block.header.difficulty;
 
-            // check if the block is valid
+            // validate the block
+            // check its nonce
             if hash > required_difficulty {
                 // reject the block
                 return added_blocks;
             }
+            // check all transactions inside it
+            let Some(new_state) = parent_state.update_with_transactions(
+                block.content.transactions.iter().map(|signed| &signed.raw_transaction)
+            ) else {
+                return added_blocks;
+            };
 
             // assume that if the blocks are valid, then we care about them even
             // if they're unsolicited.
 
             // add the blocks to the blockchain
-            self.insert(block);
+            let block_height = parent_height + 1;
+            self.hash_to_block.insert(hash, (block, block_height, Arc::new(new_state)));
+            // if the block's height is the new tallest, it becomes the new tip
+            let &(_, current_tallest_height, _) = self
+                .hash_to_block
+                .get(&self.tip)
+                .expect("tip exists in the blockchain");
+            if block_height > current_tallest_height {
+                self.tip = hash;
+            }
+
             added_blocks.push(hash);
 
             // insert all blocks for which this block is a parent
@@ -89,8 +114,8 @@ impl Blockchain {
         self.tip
     }
 
-    /// Look up a block and its height using the specified hash
-    pub fn look_up_block(&self, hash: &H256) -> Option<&(Block, u64)> {
+    /// Look up a block and its height and state using the specified hash
+    pub fn look_up_block(&self, hash: &H256) -> Option<&(Block, u64, Arc<State>)> {
         self.hash_to_block.get(hash)
     }
 
@@ -100,12 +125,12 @@ impl Blockchain {
         let mut results = Vec::new();
         let mut current_hash = self.tip;
 
-        let &(_, expected_height) = self
+        let &(_, expected_height, _) = self
             .hash_to_block
             .get(&self.tip)
             .expect("tip exists in the blockchain");
 
-        while let Some((block, _)) = self.hash_to_block.get(&current_hash) {
+        while let Some((block, _, _)) = self.hash_to_block.get(&current_hash) {
             results.push(current_hash);
             current_hash = block.header.parent;
         }

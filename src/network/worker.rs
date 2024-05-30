@@ -4,12 +4,13 @@ use crate::{
     block::Block,
     blockchain::Blockchain,
     crypto::hash::{Hashable, H256},
+    mempool::Mempool,
     network::server::Handle as ServerHandle,
+    transaction::SignedTransaction as Transaction
 };
 use crossbeam::channel;
 use log::{debug, warn};
 use std::{
-    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
     thread, time::SystemTime,
 };
@@ -20,7 +21,7 @@ pub struct Context {
     num_worker: usize,
     server: ServerHandle,
     blockchain: Arc<Mutex<Blockchain>>,
-    // TODO mempool
+    mempool: Arc<Mutex<Mempool>>,
 }
 
 pub fn new(
@@ -28,12 +29,14 @@ pub fn new(
     msg_src: channel::Receiver<(Vec<u8>, peer::Handle)>,
     server: &ServerHandle,
     blockchain: Arc<Mutex<Blockchain>>,
+    mempool: Arc<Mutex<Mempool>>,
 ) -> Context {
     Context {
         msg_chan: msg_src,
         num_worker,
         server: server.clone(),
         blockchain,
+        mempool,
     }
 }
 
@@ -80,7 +83,7 @@ impl Context {
                     let requested_blocks: Vec<Block> = requested_block_hashes
                         .into_iter()
                         .filter_map(|hash| blockchain.look_up_block(&hash))
-                        .map(|(block, _height)| block.clone())
+                        .map(|(block, _, _)| block.clone())
                         .collect();
                     drop(blockchain);
                     if !requested_blocks.is_empty() {
@@ -103,6 +106,45 @@ impl Context {
                     }
                     if !all_added_blocks.is_empty() {
                         self.server.broadcast(Message::NewBlockHashes(all_added_blocks));
+                    }
+                }
+                Message::NewTransactionHashes(new_hashes) => {
+                    debug!("NewTransactionHashes: {:?}", new_hashes);
+                    let mempool = self.mempool.lock().expect("idk why this should succeed");
+                    let unknown_hashes: Vec<H256> = new_hashes
+                        .into_iter()
+                        .filter(|new_hash| mempool.get_transaction(new_hash).is_none())
+                        .collect();
+                    drop(mempool);
+                    if !unknown_hashes.is_empty() {
+                        peer.write(Message::GetTransactions(unknown_hashes));
+                    }
+                }
+                Message::GetTransactions(requested_hashes) => {
+                    debug!("GetTransactions: {:?}", requested_hashes);
+                    let mempool = self.mempool.lock().expect("idk why this should succeed");
+                    let requested_transactions: Vec<Transaction> = requested_hashes
+                        .into_iter()
+                        .filter_map(|hash| mempool.get_transaction(&hash))
+                        .map(|transaction| transaction.clone())
+                        .collect();
+                    drop(mempool);
+                    if !requested_transactions.is_empty() {
+                        peer.write(Message::Transactions(requested_transactions));
+                    }
+                }
+                Message::Transactions(transactions) => {
+                    debug!("Transactions: {:?}", transactions.iter().map(Transaction::hash).collect::<Vec<_>>());
+                    let mut mempool = self.mempool.lock().expect("idk why this should succeed");
+                    let mut all_added_transactions = vec![];
+                    for transaction in transactions {
+                        let hash = transaction.hash();
+                        if mempool.insert_with_validation(transaction) {
+                            all_added_transactions.push(hash);
+                        }
+                    }
+                    if !all_added_transactions.is_empty() {
+                        self.server.broadcast(Message::NewTransactionHashes(all_added_transactions));
                     }
                 }
             }

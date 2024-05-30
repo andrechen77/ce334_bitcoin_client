@@ -6,8 +6,10 @@ pub mod api;
 pub mod block;
 pub mod blockchain;
 pub mod crypto;
+pub mod mempool;
 pub mod miner;
 pub mod network;
+pub mod state;
 pub mod transaction;
 
 use api::Server as ApiServer;
@@ -15,6 +17,7 @@ use blockchain::Blockchain;
 use clap::clap_app;
 use crossbeam::channel;
 use log::{error, info};
+use mempool::Mempool;
 use network::{server, worker};
 use std::net;
 use std::process;
@@ -59,8 +62,9 @@ fn main() {
             process::exit(1);
         });
 
-    // create blockchain
+    // create blockchain and mempool
     let blockchain = Arc::new(Mutex::new(Blockchain::new()));
+    let mempool = Arc::new(Mutex::new(Mempool::new()));
 
     // create channels between server and worker
     let (msg_tx, msg_rx) = channel::unbounded();
@@ -78,11 +82,11 @@ fn main() {
             error!("Error parsing P2P workers: {}", e);
             process::exit(1);
         });
-    let worker_ctx = worker::new(p2p_workers, msg_rx, &server, Arc::clone(&blockchain));
+    let worker_ctx = worker::new(p2p_workers, msg_rx, &server, Arc::clone(&blockchain), Arc::clone(&mempool));
     worker_ctx.start();
 
     // start the miner
-    let (miner_ctx, miner) = miner::new(&server, Arc::clone(&blockchain));
+    let (miner_ctx, miner) = miner::new(&server, Arc::clone(&blockchain), Arc::clone(&mempool));
     miner_ctx.start();
 
     // connect to known peers
