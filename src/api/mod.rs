@@ -1,10 +1,16 @@
+use crate::blockchain;
+use crate::blockchain::Blockchain;
 use crate::miner::Handle as MinerHandle;
 use crate::network::message::Message;
 use crate::network::server::Handle as NetworkServerHandle;
+use crate::transaction_generator::TransactionGenerator;
 use serde::Serialize;
 
 use log::info;
 use std::collections::HashMap;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use tiny_http::Header;
 use tiny_http::Response;
@@ -15,6 +21,8 @@ pub struct Server {
     handle: HTTPServer,
     miner: MinerHandle,
     network: NetworkServerHandle,
+    tx_gen: Sender<()>,
+    blockchain: Arc<Mutex<Blockchain>>,
 }
 
 #[derive(Serialize)]
@@ -37,17 +45,21 @@ macro_rules! respond_result {
 }
 
 impl Server {
-    pub fn start(addr: std::net::SocketAddr, miner: &MinerHandle, network: &NetworkServerHandle) {
+    pub fn start(addr: std::net::SocketAddr, miner: &MinerHandle, network: &NetworkServerHandle, tx_gen: Sender<()>, blockchain: Arc<Mutex<Blockchain>>) {
         let handle = HTTPServer::http(&addr).unwrap();
         let server = Self {
             handle,
             miner: miner.clone(),
             network: network.clone(),
+            tx_gen,
+            blockchain: blockchain.clone(),
         };
         thread::spawn(move || {
             for req in server.handle.incoming_requests() {
                 let miner = server.miner.clone();
                 let network = server.network.clone();
+                let tx_gen = server.tx_gen.clone();
+                let blockchain = blockchain.clone();
                 thread::spawn(move || {
                     // a valid url requires a base
                     let base_url = Url::parse(&format!("http://{}/", &addr)).unwrap();
@@ -86,6 +98,18 @@ impl Server {
                         "/miner/exit" => {
                             miner.exit();
                             respond_result!(req, true, "ok");
+                        }
+                        "/tx_gen" => {
+                            // start the transaction generator
+                            let _ = tx_gen.send(());
+                            respond_result!(req, true, "ok");
+                        }
+                        "/status" => {
+                            let blockchain = blockchain.lock().expect("should work");
+                            let response = format!("{}", blockchain);
+                            let content_type = "Content-Type: text/plain".parse::<Header>().unwrap();
+                            let resp = Response::from_string(response).with_header(content_type);
+                            req.respond(resp).unwrap();
                         }
                         "/network/ping" => {
                             network.broadcast(Message::Ping(String::from("Test ping")));

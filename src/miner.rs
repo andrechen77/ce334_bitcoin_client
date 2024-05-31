@@ -6,14 +6,18 @@ use crate::network::message::Message;
 use crate::network::server::Handle as ServerHandle;
 use crate::transaction;
 
-use log::{debug, info};
+use log::{debug, info, trace};
 
 use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
 use std::iter::FromIterator;
 use std::sync::{Arc, Mutex};
+use std::thread::current;
 use std::time::{Duration, SystemTime};
 
 use std::{iter, thread};
+
+const OUR_MINIMUM_BLOCK_SIZE: usize = 5;
+const OUR_MAXIMUM_BLOCK_SIZE: usize = 7;
 
 enum ControlSignal {
     Start(u64), // the number controls the lambda of interval between block generation
@@ -94,8 +98,7 @@ impl Context {
     }
 
     fn miner_loop(&mut self) {
-        // create a block
-        let mut block = self.create_next_block(rand::random());
+        let mut current_block = None;
 
         // main mining loop
         loop {
@@ -121,25 +124,33 @@ impl Context {
                 return;
             }
 
+
             // do one iteration of mining
-            block.header.timestamp = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("system time should always be after Unix epoch")
-                .as_millis();
-            let hash = block.hash();
-            if hash <= block.header.difficulty {
-                // add the block to the chain
-                let mut blockchain = self.blockchain.lock().expect("idk why this should succeed");
-                blockchain.insert(block);
-                drop(blockchain);
-                info!("Mined a block! Added to blockchain");
-                self.server.broadcast(Message::NewBlockHashes(vec![hash]));
-                block = self.create_next_block(rand::random());
+            // make sure we have a block to work on
+            if current_block.is_none() {
+                current_block = self.create_next_block(rand::random());
+            }
+            if let Some(block) = &mut current_block {
+                block.header.timestamp = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("system time should always be after Unix epoch")
+                    .as_millis();
+                let hash = block.hash();
+                if hash <= block.header.difficulty {
+                    // add the block to the chain
+                    let mut blockchain = self.blockchain.lock().expect("idk why this should succeed");
+                    blockchain.insert_block_with_validation(current_block.take().expect("should exist"));
+                    drop(blockchain);
+                    info!("Mined a block! Added to blockchain");
+                    self.server.broadcast(Message::NewBlockHashes(vec![hash]));
+                } else {
+                    debug!("Didn't work, trying another nonce");
+                    // increment the nonce for the next iteration
+                    block.header.nonce += 1;
+                    // should never wrap back around to the starting nonce
+                }
             } else {
-                debug!("Didn't work, trying another nonce");
-                // increment the nonce for the next iteration
-                block.header.nonce += 1;
-                // should never wrap back around to the starting nonce
+                debug!("couldn't build a block");
             }
 
             if let OperatingState::Run(i) = self.operating_state {
@@ -151,25 +162,42 @@ impl Context {
         }
     }
 
-    fn create_next_block(&self, starting_nonce: u32) -> Block {
-        debug!("Creating the next block");
+    fn create_next_block(&self, starting_nonce: u32) -> Option<Block> {
         let blockchain = self.blockchain.lock().expect("idk why this should be safe");
-        let parent_hash = blockchain.tip();
-        let (parent_block, _) = blockchain
-            .look_up_block(&parent_hash)
-            .expect("parent of tip should exist");
+        let parent_hash = blockchain.tip_hash();
+        let (parent_block, _, parent_state) = blockchain.tip_data();
         let difficulty = parent_block.header.difficulty;
+
+        // attempt to build a block from the transactions in the mempool
+        let mut transactions = Vec::new();
+        let mut state = parent_state.clone();
+        for (_, transaction) in blockchain.mempool_transactions() {
+            if transactions.len() >= OUR_MAXIMUM_BLOCK_SIZE {
+                break;
+            }
+
+            if state.update_in_place(&transaction.raw_transaction) {
+                transactions.push(transaction);
+            // } else {
+            //     debug!("rejected tx: {:?}", &transaction);
+            }
+        }
+        if transactions.len() < OUR_MINIMUM_BLOCK_SIZE {
+            // unable to build a block
+            return None;
+        }
+
+        // we have the transactions, now put them together into a block
+        debug!("Creating the next block!");
+        let transactions: Vec<_> = transactions.into_iter().map(|tx| tx.clone()).collect();
         drop(blockchain);
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("system time should always be after Unix epoch")
             .as_millis();
-        let transactions = Vec::from_iter(
-            iter::repeat_with(|| transaction::SignedTransaction::generate_random()).take(10),
-        );
         let merkle_tree = MerkleTree::new(&transactions);
         let merkle_root = merkle_tree.root();
-        Block {
+        Some(Block {
             header: Header {
                 parent: parent_hash,
                 nonce: starting_nonce,
@@ -178,6 +206,6 @@ impl Context {
                 merkle_root,
             },
             content: Content { transactions },
-        }
+        })
     }
 }

@@ -57,7 +57,7 @@ impl Hashable for RawTransaction {
 }
 
 /// A signed transaction
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SignedTransaction {
     pub raw_transaction: RawTransaction,
     pub pub_key: Vec<u8>,
@@ -84,7 +84,16 @@ impl SignedTransaction {
         let public_key = ring::signature::UnparsedPublicKey::new(
             &ring::signature::ED25519, &self.pub_key[..]
         );
-        public_key.verify(&serialized_raw, self.signature.as_ref()).is_ok()
+
+        let valid_signature = public_key.verify(&serialized_raw, self.signature.as_ref()).is_ok();
+        let signed_by_owner = H160::from_pubkey(&self.pub_key[..]) == self.raw_transaction.from_addr;
+        valid_signature && signed_by_owner
+    }
+}
+
+impl std::fmt::Debug for SignedTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.raw_transaction)
     }
 }
 

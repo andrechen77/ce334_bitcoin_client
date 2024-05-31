@@ -1,7 +1,7 @@
 use serde::{Serialize,Deserialize};
 
 /// A 160-bit public address.
-#[derive(Eq, PartialEq, Serialize, Deserialize, Clone, Hash, Default, Copy)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Clone, Hash, Default, Copy)]
 pub struct H160([u8; 20]);
 
 impl std::fmt::Display for H160 {

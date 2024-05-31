@@ -8,7 +8,9 @@ pub mod blockchain;
 pub mod crypto;
 pub mod miner;
 pub mod network;
+pub mod state;
 pub mod transaction;
+pub mod transaction_generator;
 
 use api::Server as ApiServer;
 use blockchain::Blockchain;
@@ -16,8 +18,11 @@ use clap::clap_app;
 use crossbeam::channel;
 use log::{error, info};
 use network::{server, worker};
+use state::State;
+use transaction_generator::TransactionGenerator;
 use std::net;
 use std::process;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
@@ -118,8 +123,13 @@ fn main() {
         });
     }
 
+    // start the transaction generator
+    let (tx_gen_tx, tx_gen_rx) = mpsc::channel();
+    let transaction_generator = TransactionGenerator::new(&server, &blockchain, tx_gen_rx);
+    transaction_generator.start();
+
     // start the API server
-    ApiServer::start(api_addr, &miner, &server);
+    ApiServer::start(api_addr, &miner, &server, tx_gen_tx, Arc::clone(&blockchain));
 
     loop {
         std::thread::park();
